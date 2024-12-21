@@ -56,9 +56,9 @@ def prepare_movielens_dataset(dataset_path):
     output_path = os.path.join(dataset_path, 'processed')
     os.makedirs(output_path, exist_ok=True)
     
-    # movies_enriched.to_csv(os.path.join(output_path, 'movies_processed.csv'), index=False)
-    # ratings.to_csv(os.path.join(output_path, 'ratings_processed.csv'), index=False)
-    # user_activity.to_csv(os.path.join(output_path, 'user_activity.csv'), index=False)
+    movies_enriched.to_csv(os.path.join(output_path, 'movies_processed.csv'), index=False)
+    ratings.to_csv(os.path.join(output_path, 'ratings_processed.csv'), index=False)
+    user_activity.to_csv(os.path.join(output_path, 'user_activity.csv'), index=False)
     
     # Resumen del procesamiento
     print("\n--- Resumen de Procesamiento de Dataset ---")
