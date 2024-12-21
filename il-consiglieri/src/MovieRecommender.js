@@ -3,9 +3,10 @@ import { Search, Star, StarHalf, Film, ThumbsUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Button } from "./components/ui/button";
-
+import load_dotenv from dotenv 
+load_dotenv()
 // Constantes
-const TMDB_API_KEY = '1e32e3c58214f71c5c5e035dc6f4c711';
+const TMDB_API_KEY = os.getenv("APIKey");
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
 
 // Servicio para manejar las IDs y obtener imágenes
