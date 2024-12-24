@@ -1,16 +1,15 @@
+import React from 'react';
+import { Route, Routes } from 'react-router-dom';
 import MovieRecommender from './MovieRecommender';
 import OnboardingFlow from './OnboardingFlow';
 
-import logo from './logo.svg';
-import './App.css';
-<Route path="/onboarding" element={<OnboardingFlow />} />
 function App() {
   return (
-    <div className="App">
-      <MovieRecommender />
-    </div>
+    <Routes>
+      <Route path="/" element={<OnboardingFlow />} />
+      <Route path="/recommender" element={<MovieRecommender />} />
+    </Routes>
   );
 }
-
 
 export default App;

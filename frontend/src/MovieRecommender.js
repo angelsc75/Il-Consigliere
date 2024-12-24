@@ -1,9 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Star, StarHalf, Film, ThumbsUp, ThumbsDown, Loader } from 'lucide-react';
-import { Card, CardHeader, CardContent, CardFooter, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "./components/ui/input";
-import { Button } from "./components/ui/button";
-import { Progress } from "./components/ui/progress";
+import React, { useState, useEffect } from 'react'
+import { Search, Star, StarHalf, Film, ThumbsUp, ThumbsDown, Loader } from 'lucide-react'
+import { 
+  Card, 
+  CardHeader, 
+  CardTitle, 
+  CardDescription, 
+  CardContent, 
+  CardFooter 
+} from './components/ui/card';
+import { Input } from "./components/ui/input"
+import { Button } from './components/ui/button'
+import { Progress } from './components/ui/progress'
 
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
 const REQUIRED_RATINGS = 5;

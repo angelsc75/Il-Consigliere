@@ -1,8 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { Star, ThumbsUp, ThumbsDown, Loader } from 'lucide-react';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import React, { useState, useEffect } from 'react'
+import { Star, ThumbsUp, ThumbsDown, Loader } from 'lucide-react'
+import { 
+  Card, 
+  CardHeader, 
+  CardTitle, 
+  CardDescription, 
+  CardContent, 
+  CardFooter 
+} from './components/ui/card';
+import { Button } from "./components/ui/button"
+import { Progress } from "./components/ui/progress"
 
 const OnboardingFlow = () => {
   const [step, setStep] = useState('initial'); // initial, rating, recommendations, feedback

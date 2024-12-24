@@ -1,26 +1,53 @@
-import React from "react";
-import "./card.css"; // Opcional, para estilos específicos
+import * as React from "react"
 
-export function Card({ children, className }) {
-  return <div className={`card ${className}`}>{children}</div>;
-}
+const Card = React.forwardRef(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className="rounded-lg border bg-card text-card-foreground shadow-sm p-6"
+    {...props}
+  />
+))
+Card.displayName = "Card"
 
-export function CardContent({ children }) {
-  return <div className="card-content">{children}</div>;
-}
+const CardHeader = React.forwardRef(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className="flex flex-col space-y-1.5 pb-4"
+    {...props}
+  />
+))
+CardHeader.displayName = "CardHeader"
 
-export function CardDescription({ children }) {
-  return <p className="card-description">{children}</p>;
-}
+const CardTitle = React.forwardRef(({ className, ...props }, ref) => (
+  <h3
+    ref={ref}
+    className="text-2xl font-semibold leading-none tracking-tight"
+    {...props}
+  />
+))
+CardTitle.displayName = "CardTitle"
 
-export function CardFooter({ children }) {
-  return <div className="card-footer">{children}</div>;
-}
+const CardDescription = React.forwardRef(({ className, ...props }, ref) => (
+  <p
+    ref={ref}
+    className="text-sm text-gray-500"
+    {...props}
+  />
+))
+CardDescription.displayName = "CardDescription"
 
-export function CardHeader({ children }) {
-  return <div className="card-header">{children}</div>;
-}
+const CardContent = React.forwardRef(({ className, ...props }, ref) => (
+  <div ref={ref} className="pt-0" {...props} />
+))
+CardContent.displayName = "CardContent"
 
-export function CardTitle({ children }) {
-  return <h3 className="card-title">{children}</h3>;
-}
+const CardFooter = React.forwardRef(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className="flex items-center pt-4"
+    {...props}
+  />
+))
+CardFooter.displayName = "CardFooter"
+
+export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
