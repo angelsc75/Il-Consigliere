@@ -22,9 +22,9 @@ const MovieRatingCard = ({ movie, onRate, currentRating }) => {
         <CardTitle>{movie.title}</CardTitle>
       </CardHeader>
       <CardContent>
-        {movie.posterPath && (
+        {movie.poster_path && (
           <img 
-            src={movie.posterPath} 
+            src={movie.poster_path} 
             alt={movie.title} 
             className="w-full h-48 object-cover rounded-md"
           />
@@ -50,7 +50,7 @@ MovieRatingCard.propTypes = {
   movie: PropTypes.shape({
     id: PropTypes.number.isRequired,
     title: PropTypes.string.isRequired,
-    posterPath: PropTypes.string,
+    poster_path: PropTypes.string,
     overview: PropTypes.string,
     tags: PropTypes.arrayOf(PropTypes.string)
   }),
@@ -67,9 +67,9 @@ const RecommendationCard = ({ movie, onFeedback }) => {
         <CardTitle>{movie.title}</CardTitle>
       </CardHeader>
       <CardContent>
-        {movie.posterPath && (
+        {movie.poster_path && (
           <img 
-            src={movie.posterPath} 
+            src={movie.poster_path} 
             alt={movie.title} 
             className="w-full h-48 object-cover rounded-md"
           />
@@ -102,7 +102,7 @@ RecommendationCard.propTypes = {
   movie: PropTypes.shape({
     id: PropTypes.number.isRequired,
     title: PropTypes.string.isRequired,
-    posterPath: PropTypes.string,
+    poster_path: PropTypes.string,
     overview: PropTypes.string,
     tags: PropTypes.arrayOf(PropTypes.string)
   }),
@@ -125,25 +125,27 @@ const OnboardingFlow = () => {
     setError(null);
     try {
       const response = await fetch(endpoints.popular);
-      
+      const data = await response.json();
+      console.log('Movies received:', data);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      const data = await response.json();
-      console.log('Movies received:', data);
+      
       
       if (!Array.isArray(data) || data.length === 0) {
         throw new Error('Invalid data format received from server');
       }
       
+      
       const validMovies = data.map(movie => ({
-        id: movie.id,
-        title: movie.title,
-        posterPath: movie.poster_path,
-        overview: movie.overview || '',
-        tags: movie.tags || []
-      }));
+      id: movie.id,
+      title: movie.title,
+      poster_path: movie.poster_path,
+      overview: movie.overview,
+      tags: movie.tags || []
+    }));
+      console.log('Processed movies:', validMovies);
       
       setMoviesToRate(validMovies);
       setStep('rating');
@@ -184,7 +186,7 @@ const OnboardingFlow = () => {
       setRecommendations(data.map(movie => ({
         id: movie.id,
         title: movie.title,
-        posterPath: movie.poster_path,
+        poster_path: movie.poster_path,
         overview: movie.overview || '',
         tags: movie.tags || []
       })));

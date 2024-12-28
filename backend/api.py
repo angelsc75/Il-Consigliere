@@ -169,22 +169,24 @@ class MovieRecommender:
     def get_tmdb_info(self, movie_id: int) -> dict:
         try:
             tmdb_id = self.movie_links.loc[movie_id, 'tmdbId']
+            print(f"TMDB ID for movie {movie_id}: {tmdb_id}")  # Log 1
+            
             response = requests.get(
                 f"https://api.themoviedb.org/3/movie/{tmdb_id}",
-                params={
-                    'api_key': os.getenv('TMDB_API_KEY')
-                }
+                params={'api_key': os.getenv('TMDB_API_KEY')}
             )
+            print(f"TMDB API Response: {response.status_code}")  # Log 2
             if response.status_code == 200:
                 data = response.json()
-                return {
-                    'tmdb_id': str(tmdb_id),
+                result = {
                     'poster_path': f"https://image.tmdb.org/t/p/w500{data['poster_path']}" if data.get('poster_path') else None,
                     'overview': data.get('overview')
                 }
-        except:
-            pass
-        return {'tmdb_id': None, 'poster_path': None, 'overview': None}
+                print(f"TMDB Info Result: {result}")  # Log 3
+                return result
+        except Exception as e:
+            print(f"Error in get_tmdb_info: {str(e)}")  # Log 4
+        return {'poster_path': None, 'overview': None}
 
 
 
@@ -217,11 +219,17 @@ async def get_popular_movies(limit: int = 10, neo4j_session = Depends(get_neo4j)
         print("Debug: Ejecutando query")
         result = neo4j_session.run(query, limit=limit)
         movies = list(result)
-        print(f"Debug: Movies count: {len(movies)}")
-        if len(movies) > 0:
-            print(f"Debug: First movie: {movies[0]}")
+        recommender = MovieRecommender()
+        movies_with_info = []
+        for movie in movies:
+            movie_data = {"id": movie["movieId"], "title": movie["title"]}
+            tmdb_info = recommender.get_tmdb_info(movie["movieId"])
+            print(f"TMDB info for movie {movie['movieId']}: {tmdb_info}")  # Log debug
+            movie_data.update(tmdb_info)
+            movies_with_info.append(movie_data)
         
-        return [{"id": movie["movieId"], "title": movie["title"]} for movie in movies]
+        return movies_with_info
+        
         
     except Exception as e:
         print(f"Error: {str(e)}")
