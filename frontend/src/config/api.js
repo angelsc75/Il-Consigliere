@@ -7,5 +7,6 @@ export const endpoints = {
   recommendations: (userId) => `${API_BASE_URL}/api/movies/recommendations/${userId}`,
   feedback: `${API_BASE_URL}/api/feedback`,
   interactions: (userId) => `${API_BASE_URL}/api/users/${userId}/interactions`,
-  search: `${API_BASE_URL}/api/movies/search`
+  search: `${API_BASE_URL}/api/movies/search`,
+  users: `${API_BASE_URL}/api/users`,
 }; 

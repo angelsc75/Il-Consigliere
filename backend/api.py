@@ -285,12 +285,13 @@ async def get_recommendations(
     recommender: MovieRecommender = Depends(get_recommender)
 ):
     query = """
+    MATCH (u:User {userId: $user_id})
     MATCH (m:Movie)
-    WHERE NOT EXISTS((User {userId: $user_id})-[:RATED]->(m))
-    AND NOT EXISTS((User {userId: $user_id})-[:GAVE_FEEDBACK {type: 'not_interested'}]->(m))
-    AND NOT EXISTS((User {userId: $user_id})-[:GAVE_FEEDBACK {type: 'dislike'}]->(m))
+    WHERE NOT EXISTS((u)-[:RATED]->(m))
+    AND NOT EXISTS((u)-[:GAVE_FEEDBACK {type: 'not_interested'}]->(m))
+    AND NOT EXISTS((u)-[:GAVE_FEEDBACK {type: 'dislike'}]->(m))
     
-    OPTIONAL MATCH (User {userId: $user_id})-[p:PREFERS]->(t:Tag)<-[:HAS_TAG]-(m)
+    OPTIONAL MATCH (u)-[p:PREFERS]->(t:Tag)<-[:HAS_TAG]-(m)
     WITH m, sum(coalesce(p.weight, 0)) as tag_score
     
     RETURN m.movieId as movieId, 
@@ -335,25 +336,36 @@ async def get_recommendations(
 @app.post("/api/movies/recommendations/{user_id}")
 async def get_personalized_recommendations(
     user_id: int,
-    ratings: Dict[str, float],
+    body: dict,  # Cambiamos esto temporalmente para ver qué recibimos
     neo4j_session = Depends(get_neo4j),
     recommender: MovieRecommender = Depends(get_recommender)
 ):
-    for movie_id, rating in ratings.items():
-        query = """
-        MATCH (u:User {userId: $user_id})
-        MATCH (m:Movie {movieId: $movie_id})
-        MERGE (u)-[r:RATED]->(m)
-        SET r.rating = $rating
-        """
-        neo4j_session.run(
-            query,
-            user_id=user_id,
-            movie_id=int(movie_id),
-            rating=rating
-        )
+    print("Received body:", body)  # Debug print
     
-    return await get_recommendations(user_id, 10, neo4j_session, recommender)
+    try:
+        ratings = body.get('ratings', {})
+        # Convertir las claves del diccionario a enteros
+        ratings_converted = {int(k): float(v) for k, v in ratings.items()}
+        print("Converted ratings:", ratings_converted)  # Debug print
+        
+        for movie_id, rating in ratings_converted.items():
+            query = """
+            MATCH (u:User {userId: $user_id})
+            MATCH (m:Movie {movieId: $movie_id})
+            MERGE (u)-[r:RATED]->(m)
+            SET r.rating = $rating
+            """
+            neo4j_session.run(
+                query,
+                user_id=user_id,
+                movie_id=movie_id,
+                rating=rating
+            )
+        
+        return await get_recommendations(user_id, 10, neo4j_session, recommender)
+    except Exception as e:
+        print("Error processing request:", str(e))  # Debug print
+        raise HTTPException(status_code=400, detail=str(e))
 
 # 3. Finalmente las rutas con parámetros genéricos
 @app.get("/api/movies/{movie_id}", response_model=Movie)
@@ -417,3 +429,25 @@ async def get_movie_feedback_stats(
         feedback_stats[item["type"]] = item["count"]
     
     return feedback_stats
+
+@app.get("/api/users")
+async def get_users(neo4j_session=Depends(get_neo4j)):
+    query = "MATCH (u:User) RETURN u.userId as userId"
+    result = neo4j_session.run(query)
+    users = [{"userId": row["userId"]} for row in result]
+    return users
+
+@app.post("/api/users")
+async def create_user(neo4j_session=Depends(get_neo4j)):
+    query = """
+    MATCH (u:User)
+    WITH max(u.userId) as maxId
+    CREATE (newUser:User {userId: maxId + 1})
+    RETURN newUser.userId as userId
+    """
+    result = neo4j_session.run(query)
+    new_user = result.single()
+    if not new_user:
+        raise HTTPException(status_code=500, detail="Error al crear el usuario")
+    return {"userId": new_user["userId"]}
+

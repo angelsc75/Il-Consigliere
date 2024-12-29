@@ -110,15 +110,65 @@ RecommendationCard.propTypes = {
 };
 
 const OnboardingFlow = () => {
-  const [step, setStep] = useState('initial');
+  const [step, setStep] = useState('user-selection');
   const [moviesToRate, setMoviesToRate] = useState([]);
   const [userRatings, setUserRatings] = useState({});
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [inputUserId, setInputUserId] = useState('');
   
   const REQUIRED_RATINGS = 5;
+  
+
+  // Load stored userId on mount
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('userId');
+    if (storedUserId) {
+      setUserId(storedUserId);
+      setStep('initial');
+    }
+  }, []);
+
+  const handleExistingUser = async (id) => {
+    if (!id) return;
+    
+    try {
+      // Verificar si el usuario existe
+      const response = await fetch(`${endpoints.users}/${id}`);
+      if (response.ok) {
+        setUserId(id);
+        localStorage.setItem('userId', id);
+        setStep('initial');
+      } else {
+        setError('Usuario no encontrado');
+      }
+    } catch (error) {
+      console.error('Error verificando usuario:', error);
+      setError('Error al verificar el usuario');
+    }
+  };
+
+  const createUser = async () => {
+    try {
+      const response = await fetch(endpoints.users, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        throw new Error('Error al crear usuario');
+      }
+      const data = await response.json();
+      setUserId(data.userId);
+      localStorage.setItem('userId', data.userId);
+      setStep('initial');
+    } catch (error) {
+      console.error('Error creating user:', error);
+      setError('Error al crear usuario');
+    }
+  };
   
   const fetchInitialMovies = async () => {
     setLoading(true);
@@ -158,30 +208,36 @@ const OnboardingFlow = () => {
   };
 
   useEffect(() => {
-    if (step === 'initial') {
+    if (step === 'initial' && userId) {
       fetchInitialMovies();
     }
-  }, [step]);
+  }, [step, userId]);
 
   const fetchRecommendations = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(endpoints.recommendations, {
+      // Log los datos que vamos a enviar
+      const requestBody = {
+        ratings: userRatings
+      };
+      console.log('Request body:', requestBody);
+  
+      const response = await fetch(endpoints.recommendations(userId), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          user_id: 1,
-          ratings: userRatings
-        })
+        body: JSON.stringify(requestBody)
       });
-
+  
+      // Si hay error, vamos a ver qué dice el servidor
       if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Server error response:', errorData);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-
+  
       const data = await response.json();
       setRecommendations(data.map(movie => ({
         id: movie.id,
@@ -203,15 +259,17 @@ const OnboardingFlow = () => {
   
 
   const handleRating = async (movieId, rating) => {
-    setUserRatings(prev => ({
-      ...prev,
+    const updatedRatings = {
+      ...userRatings,
       [movieId]: rating
-    }));
-
-    const totalRatings = Object.keys(userRatings).length + 1;
+    };
+    setUserRatings(updatedRatings);
+    console.log('Updated ratings:', updatedRatings); // Para debug
+  
+    const totalRatings = Object.keys(updatedRatings).length;
     const newProgress = (totalRatings / REQUIRED_RATINGS) * 100;
     setProgress(newProgress);
-
+  
     if (totalRatings >= REQUIRED_RATINGS) {
       await fetchRecommendations();
     }
@@ -240,17 +298,67 @@ const OnboardingFlow = () => {
       <div className="flex justify-center items-center h-64">
         <div className="flex flex-col items-center gap-4">
           <Loader className="w-8 h-8 animate-spin" />
-          <p>Cargando películas...</p>
+          <p>Cargando...</p>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (step === 'user-selection') {
     return (
-      <div className="flex justify-center items-center h-64 flex-col">
-        <p className="text-red-500 mb-4">{error}</p>
-        <Button onClick={fetchInitialMovies}>Intentar de nuevo</Button>
+      <div className="max-w-md mx-auto p-6">
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>¿Ya tienes un ID de usuario?</CardTitle>
+            <CardDescription>Introduce tu ID de usuario o crea uno nuevo</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div className="flex flex-col space-y-2">
+                <label htmlFor="userId" className="text-sm font-medium">
+                  ID de Usuario
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="userId"
+                    type="number"
+                    value={inputUserId}
+                    onChange={(e) => setInputUserId(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-md"
+                    placeholder="Introduce tu ID"
+                  />
+                  <Button 
+                    onClick={() => handleExistingUser(inputUserId)}
+                    disabled={!inputUserId}
+                  >
+                    Continuar
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">O</span>
+                </div>
+              </div>
+
+              <Button 
+                onClick={createUser}
+                className="w-full"
+                variant="outline"
+              >
+                Crear nuevo usuario
+              </Button>
+            </div>
+
+            {error && (
+              <p className="text-red-500 text-sm mt-2">{error}</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
     );
   }
