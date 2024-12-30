@@ -157,12 +157,24 @@ class MovieRecommender:
 
 
     def get_movie_tags(self, movie_id: int, neo4j_session):
+        """
+        Obtiene los tags de una película y asegura que coincidan con el formato de entrenamiento
+        """
+        # Obtener todos los tags posibles que se usaron en el entrenamiento
+        training_tags = set(self.tag_scaler.feature_names_in_)
+        
+        # Obtener los tags actuales de la película
         query = """
         MATCH (m:Movie {movieId: $movie_id})-[r:HAS_TAG]->(t:Tag)
         RETURN t.name as tag_name, r.relevance as relevance
         """
         result = neo4j_session.run(query, movie_id=movie_id)
-        return {row['tag_name']: row['relevance'] for row in result}
+        current_tags = {row['tag_name']: row['relevance'] for row in result}
+        
+        # Crear un diccionario con todos los tags del entrenamiento, con valor 0 si no existe
+        tag_features = {tag: current_tags.get(tag, 0.0) for tag in training_tags}
+        
+        return tag_features
 
     
 
@@ -284,20 +296,11 @@ async def get_recommendations(
     neo4j_session = Depends(get_neo4j),
     recommender: MovieRecommender = Depends(get_recommender)
 ):
+    # Consulta simplificada que solo usa relaciones existentes
     query = """
-    MATCH (u:User {userId: $user_id})
     MATCH (m:Movie)
-    WHERE NOT EXISTS((u)-[:RATED]->(m))
-    AND NOT EXISTS((u)-[:GAVE_FEEDBACK {type: 'not_interested'}]->(m))
-    AND NOT EXISTS((u)-[:GAVE_FEEDBACK {type: 'dislike'}]->(m))
-    
-    OPTIONAL MATCH (u)-[p:PREFERS]->(t:Tag)<-[:HAS_TAG]-(m)
-    WITH m, sum(coalesce(p.weight, 0)) as tag_score
-    
-    RETURN m.movieId as movieId, 
-           m.title as title,
-           tag_score
-    ORDER BY tag_score DESC
+    WHERE NOT EXISTS((User {userId: $user_id})-[:RATED]->(m))
+    RETURN m.movieId as movieId, m.title as title
     LIMIT 100
     """
     
@@ -311,10 +314,14 @@ async def get_recommendations(
         }
         
         # Predecir rating
-        movie["predicted_rating"] = recommender.predict_rating(
-            user_id, movie["id"], neo4j_session
-        )
-        
+        try:
+            movie["predicted_rating"] = recommender.predict_rating(
+                user_id, movie["id"], neo4j_session
+            )
+        except Exception as e:
+            print(f"Error predicting rating for movie {movie['id']}: {str(e)}")
+            continue
+            
         # Obtener tags
         tags_query = """
         MATCH (m:Movie {movieId: $movie_id})-[:HAS_TAG]->(t:Tag)
@@ -330,7 +337,7 @@ async def get_recommendations(
         movies.append(movie)
     
     # Ordenar por predicción y limitar resultados
-    movies.sort(key=lambda x: x["predicted_rating"], reverse=True)
+    movies.sort(key=lambda x: x.get("predicted_rating", 0), reverse=True)
     return movies[:limit]
 
 @app.post("/api/movies/recommendations/{user_id}")
@@ -430,24 +437,211 @@ async def get_movie_feedback_stats(
     
     return feedback_stats
 
-@app.get("/api/users")
-async def get_users(neo4j_session=Depends(get_neo4j)):
-    query = "MATCH (u:User) RETURN u.userId as userId"
-    result = neo4j_session.run(query)
-    users = [{"userId": row["userId"]} for row in result]
-    return users
+@app.get("/api/users/{user_id}")
+async def get_user(user_id: int, neo4j_session = Depends(get_neo4j)):
+    """Verifica si un usuario existe"""
+    query = "MATCH (u:User {userId: $user_id}) RETURN u"
+    result = neo4j_session.run(query, user_id=user_id)
+    user = result.single()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return {"userId": user_id}
+
+@app.get("/api/users/{user_id}/status")
+async def get_user_status(user_id: int, neo4j_session = Depends(get_neo4j)):
+    """Obtiene el estado del usuario: si es nuevo o tiene suficientes ratings"""
+    query = """
+    MATCH (u:User {userId: $user_id})-[r:RATED]->()
+    RETURN count(r) as rating_count
+    """
+    result = neo4j_session.run(query, user_id=user_id)
+    record = result.single()
+    rating_count = record["rating_count"] if record else 0
+    
+    return {
+        "hasEnoughRatings": rating_count >= 10,
+        "ratingCount": rating_count
+    }
+@app.get("/api/users/{user_id}/status")
+async def get_user_status(user_id: int, neo4j_session=Depends(get_neo4j)):
+    """Gets user rating status"""
+    try:
+        # Check user exists
+        check_query = "MATCH (u:User {userId: $user_id}) RETURN u"
+        user = neo4j_session.run(check_query, user_id=user_id).single()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        # Get rating count
+        count_query = """
+        MATCH (u:User {userId: $user_id})-[r:RATED]->()
+        RETURN COUNT(r) as rating_count
+        """
+        ratings = neo4j_session.run(count_query, user_id=user_id).single()
+        count = ratings["rating_count"] if ratings else 0
+        
+        return {
+            "hasEnoughRatings": count >= 10,
+            "ratingCount": count
+        }
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/movies/search/combined")
+async def search_movies_combined(
+    query: str = None,
+    tag: str = None,
+    genre: str = None,
+    neo4j_session = Depends(get_neo4j),
+    recommender: MovieRecommender = Depends(get_recommender)
+):
+    """Búsqueda combinada por título, tag o género"""
+    base_query = "MATCH (m:Movie)"
+    where_clauses = []
+    params = {}
+    
+    if query:
+        where_clauses.append("m.title =~ $title_pattern")
+        params["title_pattern"] = f"(?i).*{query}.*"
+    
+    if tag:
+        base_query += "-[:HAS_TAG]->(t:Tag)"
+        where_clauses.append("t.name = $tag")
+        params["tag"] = tag
+        
+    if genre:
+        base_query += "-[:IN_GENRE]->(g:Genre)"
+        where_clauses.append("g.name = $genre")
+        params["genre"] = genre
+        
+    if where_clauses:
+        base_query += " WHERE " + " AND ".join(where_clauses)
+        
+    base_query += " RETURN m.movieId as movieId, m.title as title LIMIT 20"
+    
+    result = neo4j_session.run(base_query, params)
+    movies = []
+    
+    for row in result:
+        movie_id = row["movieId"]
+        movie = {
+            "id": movie_id,
+            "title": row["title"]
+        }
+        # Obtener tags
+        tags_query = """
+        MATCH (m:Movie {movieId: $movie_id})-[:HAS_TAG]->(t:Tag)
+        RETURN t.name as tag
+        """
+        tags_result = neo4j_session.run(tags_query, movie_id=movie_id)
+        movie["tags"] = [r["tag"] for r in tags_result]
+        
+        # Obtener info de TMDB
+        tmdb_info = recommender.get_tmdb_info(movie_id)
+        movie.update(tmdb_info)
+        
+        movies.append(movie)
+    
+    return movies
 
 @app.post("/api/users")
 async def create_user(neo4j_session=Depends(get_neo4j)):
+    """Creates a new user with incremented ID"""
+    try:
+        # Get max user ID
+        query = """
+        MATCH (u:User) 
+        WITH COALESCE(MAX(u.userId), 0) as maxId
+        CREATE (newUser:User {userId: maxId + 1})
+        RETURN newUser.userId as userId
+        """
+        result = neo4j_session.run(query)
+        record = result.single()
+        
+        if not record:
+            raise HTTPException(status_code=500, detail="Failed to create user")
+            
+        return {"userId": record["userId"]}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/feedback")
+async def create_feedback(
+    feedback: Feedback,
+    neo4j_session = Depends(get_neo4j)
+):
     query = """
-    MATCH (u:User)
-    WITH max(u.userId) as maxId
-    CREATE (newUser:User {userId: maxId + 1})
-    RETURN newUser.userId as userId
+    MATCH (u:User {userId: $user_id})
+    MATCH (m:Movie {movieId: $movie_id})
+    MERGE (u)-[f:GAVE_FEEDBACK]->(m)
+    SET f.type = $feedback_type,
+        f.timestamp = $timestamp
+    RETURN f
     """
-    result = neo4j_session.run(query)
-    new_user = result.single()
-    if not new_user:
-        raise HTTPException(status_code=500, detail="Error al crear el usuario")
-    return {"userId": new_user["userId"]}
+    
+    try:
+        neo4j_session.run(
+            query,
+            user_id=feedback.user_id,
+            movie_id=feedback.movie_id,
+            feedback_type=feedback.feedback_type,
+            timestamp=feedback.timestamp
+        )
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/users/{user_id}/interactions")
+async def get_user_interactions(
+    user_id: int,
+    neo4j_session = Depends(get_neo4j)
+):
+    query = """
+    MATCH (u:User {userId: $user_id})-[r:RATED|GAVE_FEEDBACK]->(m:Movie)
+    RETURN m.movieId as movie_id,
+           m.title as title,
+           type(r) as interaction_type,
+           CASE type(r)
+             WHEN 'RATED' THEN r.rating
+             WHEN 'GAVE_FEEDBACK' THEN r.type
+           END as value,
+           r.timestamp as timestamp
+    ORDER BY r.timestamp DESC
+    """
+    
+    try:
+        result = neo4j_session.run(query, user_id=user_id)
+        interactions = [dict(record) for record in result]
+        return interactions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/feedback")
+async def create_feedback(
+    movie_id: int,
+    feedback_type: str,
+    user_id: int,
+    neo4j_session = Depends(get_neo4j)
+):
+    query = """
+    MATCH (u:User {userId: $user_id})
+    MATCH (m:Movie {movieId: $movie_id})
+    MERGE (u)-[f:GAVE_FEEDBACK]->(m)
+    SET f.type = $feedback_type,
+        f.timestamp = datetime()
+    RETURN f
+    """
+    
+    try:
+        neo4j_session.run(
+            query,
+            user_id=user_id,
+            movie_id=movie_id,
+            feedback_type=feedback_type
+        )
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
