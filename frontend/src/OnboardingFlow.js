@@ -18,45 +18,54 @@ const REQUIRED_RATINGS = 10;
 
 const MovieCard = ({ movie, onRate, currentRating, showFeedback = false, onFeedback }) => {
   if (!movie) return null;
-  
+
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle>{movie.title}</CardTitle>
-        {movie.overview && (
-          <CardDescription className="line-clamp-2">{movie.overview}</CardDescription>
-        )}
-      </CardHeader>
-      <CardContent>
+    <Card className="w-full max-w-sm bg-card text-card-foreground shadow-sm hover:shadow-lg transition-shadow">
+      <div className="relative">
         {movie.poster_path ? (
-          <img 
-            src={movie.poster_path} 
-            alt={movie.title} 
-            className="w-full h-48 object-cover rounded-md"
+          <img
+            src={movie.poster_path}
+            alt={movie.title}
+            className="w-full h-48 object-cover"
           />
         ) : (
-          <div className="w-full h-48 bg-gray-200 flex items-center justify-center rounded-md">
+          <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
             <Film className="w-12 h-12 text-gray-400" />
           </div>
         )}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {movie.tags?.map(tag => (
-            <span key={tag.id} className="px-2 py-1 bg-gray-100 rounded-full text-sm">
-              {tag.name}
-            </span>
-          ))}
+        <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+          {movie.rating ? `Rating: ${movie.rating}` : 'No Rating'}
         </div>
+      </div>
+      <CardContent className="p-4">
+        <CardTitle className="text-lg font-semibold mb-2 text-gray-800">{movie.title}</CardTitle>
+        {movie.overview && (
+          <CardDescription className="text-sm text-gray-600 line-clamp-3">{movie.overview}</CardDescription>
+        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+        {movie.tags
+  ?.sort((a, b) => b.relevance - a.relevance) // Ordena por relevancia descendente
+  .slice(0, 10) // Limita a las 10 etiquetas más relevantes
+  .map((tag, index) => (
+    <span
+      key={`${tag.name}-${index}`}
+      className="px-2 py-1 bg-blue-100 text-blue-600 rounded-full text-xs"
+    >
+      {tag.name || tag} {/* Maneja etiquetas con o sin objeto */}
+    </span>
+  ))}
 
+        </div>
       </CardContent>
-      <CardFooter className="flex justify-center gap-2">
+      <CardFooter className="p-4 flex justify-between items-center border-t">
         {onRate && (
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map(rating => (
+          <div className="flex gap-1">
+            {[1, 2, 3, 4, 5].map((rating) => (
               <Button
                 key={rating}
                 variant={currentRating === rating ? "default" : "outline"}
                 onClick={() => onRate(movie.id, rating)}
-                className="w-10 h-10 p-0"
+                className={`w-10 h-10 p-0 ${currentRating === rating ? 'bg-blue-500 text-white' : ''}`}
               >
                 {rating}
               </Button>
@@ -65,17 +74,17 @@ const MovieCard = ({ movie, onRate, currentRating, showFeedback = false, onFeedb
         )}
         {showFeedback && (
           <div className="flex gap-2">
-            <Button 
+            <Button
               onClick={() => onFeedback(movie.id, 'like')}
               variant="outline"
-              className="flex gap-2"
+              className="flex gap-2 text-green-500 border-green-500 hover:bg-green-100"
             >
               <ThumbsUp className="w-4 h-4" />
             </Button>
-            <Button 
+            <Button
               onClick={() => onFeedback(movie.id, 'dislike')}
               variant="outline"
-              className="flex gap-2"
+              className="flex gap-2 text-red-500 border-red-500 hover:bg-red-100"
             >
               <ThumbsDown className="w-4 h-4" />
             </Button>

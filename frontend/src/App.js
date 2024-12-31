@@ -2,6 +2,7 @@ import React from 'react';
 import { Route, Routes } from 'react-router-dom';
 import MovieRecommender from './MovieRecommender';
 import OnboardingFlow from './OnboardingFlow';
+import './globals.css';
 
 function App() {
   return (
