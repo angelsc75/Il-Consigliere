@@ -220,7 +220,7 @@ async def get_popular_movies(limit: int = 10, neo4j_session = Depends(get_neo4j)
     try:
         query = """
         MATCH (m:Movie)<-[r:RATED]-()
-        WITH m, avg(r.rating) as avg_rating, count(r) as num_ratings
+        WITH m, round(coalesce(AVG(r.rating), 0) * 100) / 100 as avg_rating, count(r) as num_ratings
         RETURN m.movieId as movieId, 
                m.title as title,
                avg_rating,
@@ -234,7 +234,7 @@ async def get_popular_movies(limit: int = 10, neo4j_session = Depends(get_neo4j)
         recommender = MovieRecommender()
         movies_with_info = []
         for movie in movies:
-            movie_data = {"id": movie["movieId"], "title": movie["title"]}
+            movie_data = {"id": movie["movieId"], "title": movie["title"], "rating": movie["avg_rating"],}
             tmdb_info = recommender.get_tmdb_info(movie["movieId"])
             print(f"TMDB info for movie {movie['movieId']}: {tmdb_info}")  # Log debug
             movie_data.update(tmdb_info)
@@ -513,14 +513,20 @@ async def search_movies_combined(
         params["tag"] = tag
         
     if genre:
-        base_query += "-[:IN_GENRE]->(g:Genre)"
-        where_clauses.append("g.name = $genre")
+        base_query += ""
+        where_clauses.append("m.genres = $genre")
         params["genre"] = genre
         
     if where_clauses:
         base_query += " WHERE " + " AND ".join(where_clauses)
         
-    base_query += " RETURN m.movieId as movieId, m.title as title LIMIT 20"
+    base_query += """
+            OPTIONAL MATCH (m:Movie)<-[r:RATED]-(:User)
+            RETURN m.movieId as movieId, 
+                m.title as title, 
+                round(coalesce(AVG(r.rating), 0) * 100) / 100 as avg_rating 
+            LIMIT 20
+            """
     
     result = neo4j_session.run(base_query, params)
     movies = []
@@ -529,7 +535,8 @@ async def search_movies_combined(
         movie_id = row["movieId"]
         movie = {
             "id": movie_id,
-            "title": row["title"]
+            "title": row["title"],
+            "rating": row["avg_rating"],
         }
         # Obtener tags
         tags_query = """
@@ -644,4 +651,15 @@ async def create_feedback(
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+@app.get("/api/genres")
+async def get_genres(neo4j_session = Depends(get_neo4j)):
+    query = """
+    MATCH (m:Movie)
+    UNWIND m.genres as genre
+    RETURN DISTINCT genre
+    ORDER BY genre
+    """
+    result = neo4j_session.run(query)
+    genres = [record["genre"] for record in result if record["genre"] != "(no genres listed)"]
+    return genres
 

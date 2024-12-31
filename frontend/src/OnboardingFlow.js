@@ -20,16 +20,16 @@ const MovieCard = ({ movie, onRate, currentRating, showFeedback = false, onFeedb
   if (!movie) return null;
 
   return (
-    <Card className="w-full max-w-sm bg-card text-card-foreground shadow-sm hover:shadow-lg transition-shadow">
+    <Card className="w-full max-w-sm bg-card text-card-foreground shadow-sm hover:shadow-lg transition-shadow group">
       <div className="relative">
         {movie.poster_path ? (
           <img
-            src={movie.poster_path}
-            alt={movie.title}
-            className="w-full h-48 object-cover"
-          />
+          src={movie.poster_path}
+          alt={movie.title}
+          className="w-full aspect-[2/3] object-cover"
+        />
         ) : (
-          <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+          <div className="w-full aspect-[2/3] bg-gray-200 flex items-center justify-center">
             <Film className="w-12 h-12 text-gray-400" />
           </div>
         )}
@@ -40,8 +40,13 @@ const MovieCard = ({ movie, onRate, currentRating, showFeedback = false, onFeedb
       <CardContent className="p-4">
         <CardTitle className="text-lg font-semibold mb-2 text-gray-800">{movie.title}</CardTitle>
         {movie.overview && (
-          <CardDescription className="text-sm text-gray-600 line-clamp-3">{movie.overview}</CardDescription>
+      <CardDescription
+      className="text-sm text-gray-600 line-clamp-10 group-hover:line-clamp-none transition-all duration-300 ease-in-out"
+    >
+      {movie.overview}
+    </CardDescription>
         )}
+        
         <div className="mt-4 flex flex-wrap gap-2">
         {movie.tags
   ?.sort((a, b) => b.relevance - a.relevance) // Ordena por relevancia descendente
