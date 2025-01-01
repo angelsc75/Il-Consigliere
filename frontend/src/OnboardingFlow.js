@@ -16,7 +16,18 @@ const API_BASE_URL = 'http://localhost:8000';
 
 const REQUIRED_RATINGS = 10;
 
-const MovieCard = ({ movie, onRate, currentRating, showFeedback = false, onFeedback }) => {
+const MovieCard = ({ 
+  movie, 
+  onRate, 
+  currentRating, 
+  showFeedback = false, 
+  onFeedback,
+  setSearchQuery,
+  setSearchType,
+  handleSearch,
+  setActiveTab 
+}) => {
+  // ... resto del componente igual
   if (!movie) return null;
 
   return (
@@ -47,20 +58,27 @@ const MovieCard = ({ movie, onRate, currentRating, showFeedback = false, onFeedb
     </CardDescription>
         )}
         
-        <div className="mt-4 flex flex-wrap gap-2">
+        
+      <div className="mt-4 flex flex-wrap gap-2">
         {movie.tags
-  ?.sort((a, b) => b.relevance - a.relevance) // Ordena por relevancia descendente
-  .slice(0, 10) // Limita a las 10 etiquetas más relevantes
-  .map((tag, index) => (
-    <span
-      key={`${tag.name}-${index}`}
-      className="px-2 py-1 bg-blue-100 text-blue-600 rounded-full text-xs"
-    >
-      {tag.name || tag} {/* Maneja etiquetas con o sin objeto */}
-    </span>
-  ))}
-
-        </div>
+          ?.sort((a, b) => b.relevance - a.relevance)
+          .slice(0, 10)
+          .map((tag, index) => (
+            <button
+              key={`${tag.name}-${index}`}
+              onClick={() => {
+                setSearchQuery(tag.name || tag);
+                setSearchType('tag');
+                handleSearch();
+                setActiveTab('search');
+              }}
+              className="px-2 py-1 bg-blue-100 text-blue-600 rounded-full text-xs 
+                        hover:bg-blue-200 transition-colors cursor-pointer"
+            >
+              {tag.name || tag}
+            </button>
+          ))}
+      </div>
       </CardContent>
       <CardFooter className="p-4 flex justify-between items-center border-t">
         {onRate && (
@@ -194,6 +212,7 @@ const OnboardingFlow = () => {
       const response = await fetch(`${API_BASE_URL}/api/movies/search/combined?${params}`);
       const data = await response.json();
       setSearchResults(data);
+      setActiveTab('search'); // Asegura que estamos en la pestaña de búsqueda
     } catch (error) {
       setError('Error en la búsqueda');
     }
@@ -311,11 +330,15 @@ const OnboardingFlow = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {moviesToRate.slice(0, REQUIRED_RATINGS).map(movie => (
             <MovieCard
-              key={movie.id}
-              movie={movie}
-              onRate={handleRating}
-              currentRating={userRatings[movie.id]}
-            />
+            key={movie.id}
+            movie={movie}
+            onRate={handleRating}
+            currentRating={userRatings[movie.id]}
+            setSearchQuery={setSearchQuery}
+            setSearchType={setSearchType}
+            handleSearch={handleSearch}
+            setActiveTab={setActiveTab}
+          />
           ))}
         </div>
       </div>
@@ -367,11 +390,15 @@ const OnboardingFlow = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {searchResults.map(movie => (
                 <MovieCard
-                  key={movie.id}
-                  movie={movie}
-                  onRate={handleRating}
-                  currentRating={userRatings[movie.id]}
-                />
+                key={movie.id}
+                movie={movie}
+                onRate={handleRating}
+                currentRating={userRatings[movie.id]}
+                setSearchQuery={setSearchQuery}
+                setSearchType={setSearchType}
+                handleSearch={handleSearch}
+                setActiveTab={setActiveTab}
+              />
               ))}
             </div>
           </CardContent>
@@ -394,12 +421,16 @@ const OnboardingFlow = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {recommendations.map(movie => (
                   <MovieCard
-                    key={movie.id}
-                    movie={movie}
-                    onRate={handleRating}
-                    currentRating={userRatings[movie.id]}
-                    showFeedback={true}
-                  />
+                  key={movie.id}
+                  movie={movie}
+                  onRate={handleRating}
+                  currentRating={userRatings[movie.id]}
+                  showFeedback={true}
+                  setSearchQuery={setSearchQuery}
+                  setSearchType={setSearchType}
+                  handleSearch={handleSearch}
+                  setActiveTab={setActiveTab}
+                />
                 ))}
               </div>
             )}
