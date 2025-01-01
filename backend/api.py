@@ -149,7 +149,8 @@ class MovieRecommender:
 
         # Obtener features de tags
         tags = self.get_movie_tags(movie_id, neo4j_session)
-        tag_features = self.tag_scaler.transform([list(tags.values())])
+        tag_features_df = pd.DataFrame([tags], columns=self.tag_scaler.feature_names_in_)
+        tag_features = self.tag_scaler.transform(tag_features_df)
 
         try:
             # Codificar usuario y película

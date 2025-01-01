@@ -1,0 +1,19 @@
+.app-header {
+    background-color: black;
+    color: white;
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+  }
+  
+  .app-logo {
+    height: 40px;
+    width: auto;
+    margin-right: 15px;
+  }
+  
+  .app-header h1 {
+    font-size: 20px;
+    margin: 0;
+  }
+  
