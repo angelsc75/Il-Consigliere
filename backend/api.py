@@ -22,10 +22,11 @@ app = FastAPI(title="Movie Recommender API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Specific React origin
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 
@@ -122,6 +123,11 @@ class MovieRecommender:
                 self.movie_encoder = pickle.load(f)
             with open(os.path.join(models_dir, 'tag_scaler.pkl'), 'rb') as f:
                 self.tag_scaler = pickle.load(f)
+            
+            # Obtener el rango de IDs de usuario del entrenamiento
+            self.min_user_id = min(self.user_encoder.classes_)
+            self.max_user_id = max(self.user_encoder.classes_)
+            
         except Exception as e:
             print(f"Error al cargar los encoders: {str(e)}")
             raise
@@ -133,27 +139,38 @@ class MovieRecommender:
         except Exception as e:
             print(f"Error al cargar movie_links: {str(e)}")
             raise
-        
+
     def predict_rating(self, user_id: int, movie_id: int, neo4j_session):
+        # Manejar usuarios nuevos mapeándolos al rango conocido
+        if user_id > self.max_user_id:
+            mapped_user_id = self.min_user_id + (user_id % (self.max_user_id - self.min_user_id))
+        else:
+            mapped_user_id = user_id
+
         # Obtener features de tags
         tags = self.get_movie_tags(movie_id, neo4j_session)
         tag_features = self.tag_scaler.transform([list(tags.values())])
 
-        # Codificar usuario y película
-        user_encoded = self.user_encoder.transform([user_id])
-        movie_encoded = self.movie_encoder.transform([movie_id])
+        try:
+            # Codificar usuario y película
+            user_encoded = self.user_encoder.transform([mapped_user_id])
+            movie_encoded = self.movie_encoder.transform([movie_id])
 
-        # Predecir rating
-        prediction = self.model.predict(
-            [
-                user_encoded,
-                movie_encoded,
-                tag_features
-            ],
-            verbose=0  # Suprimir la salida de progreso
-        )
-        
-        return float(prediction[0][0])
+            # Predecir rating
+            prediction = self.model.predict(
+                [
+                    user_encoded,
+                    movie_encoded,
+                    tag_features
+                ],
+                verbose=0
+            )
+            
+            return float(prediction[0][0])
+        except Exception as e:
+            print(f"Error en predict_rating: {str(e)}")
+            # Devolver un rating por defecto en caso de error
+            return 3.0  # Rating neutral
 
 
     def get_movie_tags(self, movie_id: int, neo4j_session):
@@ -296,49 +313,62 @@ async def get_recommendations(
     neo4j_session = Depends(get_neo4j),
     recommender: MovieRecommender = Depends(get_recommender)
 ):
-    # Consulta simplificada que solo usa relaciones existentes
-    query = """
-    MATCH (m:Movie)
-    WHERE NOT EXISTS((User {userId: $user_id})-[:RATED]->(m))
-    RETURN m.movieId as movieId, m.title as title
-    LIMIT 100
-    """
-    
-    result = neo4j_session.run(query, user_id=user_id)
-    movies = []
-    
-    for row in result:
-        movie = {
-            "id": row["movieId"],
-            "title": row["title"]
-        }
+    try:
+        # Verificar usuario
+        user_query = "MATCH (u:User {userId: $user_id}) RETURN u"
+        user_result = neo4j_session.run(user_query, user_id=user_id)
+        if not user_result.single():
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
         
-        # Predecir rating
-        try:
-            movie["predicted_rating"] = recommender.predict_rating(
-                user_id, movie["id"], neo4j_session
-            )
-        except Exception as e:
-            print(f"Error predicting rating for movie {movie['id']}: {str(e)}")
-            continue
-            
-        # Obtener tags
-        tags_query = """
-        MATCH (m:Movie {movieId: $movie_id})-[:HAS_TAG]->(t:Tag)
-        RETURN t.name as tag
+        # Obtener películas no calificadas
+        query = """
+        MATCH (u:User {userId: $user_id})
+        MATCH (m:Movie)
+        WHERE NOT EXISTS((u)-[:RATED]->(m))
+        RETURN m.movieId as movieId, m.title as title
+        LIMIT 100
         """
-        tags_result = neo4j_session.run(tags_query, movie_id=movie["id"])
-        movie["tags"] = [row["tag"] for row in tags_result]
         
-        # Obtener info de TMDB
-        tmdb_info = recommender.get_tmdb_info(movie["id"])
-        movie.update(tmdb_info)
+        result = neo4j_session.run(query, user_id=user_id)
+        movies = []
         
-        movies.append(movie)
-    
-    # Ordenar por predicción y limitar resultados
-    movies.sort(key=lambda x: x.get("predicted_rating", 0), reverse=True)
-    return movies[:limit]
+        for row in result:
+            try:
+                movie = {
+                    "id": row["movieId"],
+                    "title": row["title"]
+                }
+                
+                # Predecir rating
+                predicted_rating = recommender.predict_rating(
+                    user_id, movie["id"], neo4j_session
+                )
+                movie["predicted_rating"] = predicted_rating
+                
+                # Obtener tags
+                tags_query = """
+                MATCH (m:Movie {movieId: $movie_id})-[:HAS_TAG]->(t:Tag)
+                RETURN t.name as tag
+                """
+                tags_result = neo4j_session.run(tags_query, movie_id=movie["id"])
+                movie["tags"] = [row["tag"] for row in tags_result]
+                
+                # Obtener info de TMDB
+                tmdb_info = recommender.get_tmdb_info(movie["id"])
+                movie.update(tmdb_info)
+                
+                movies.append(movie)
+            except Exception as e:
+                print(f"Error procesando película {row['movieId']}: {str(e)}")
+                continue
+        
+        # Ordenar por predicción y limitar resultados
+        movies.sort(key=lambda x: x.get("predicted_rating", 0), reverse=True)
+        return movies[:limit]
+        
+    except Exception as e:
+        print(f"Error en get_recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/movies/recommendations/{user_id}")
 async def get_personalized_recommendations(
