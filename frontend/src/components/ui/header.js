@@ -6,7 +6,7 @@ const Header = () => {
   return (
     <header className="app-header">
       <img src="../logo.png" alt="Il Consigliere" className="app-logo" />
-      <h1 >Il consligliere</h1>
+      <h1 >Il Consigliere</h1>
     </header>
   );
 };
