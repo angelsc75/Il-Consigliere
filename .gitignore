@@ -163,3 +163,4 @@ cython_debug/
 /data/movielens
 ml/models/model1/new_tags_with_id.csv
 ml/models/model1/tags_without_id.csv
+/node_modules
