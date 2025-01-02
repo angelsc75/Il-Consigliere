@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Rating from 'react-rating';
 import { Search, Star, ThumbsUp, ThumbsDown, Loader, Film } from 'lucide-react';
 import { 
   Card, 
@@ -28,7 +29,6 @@ const MovieCard = ({
   handleSearch,
   setActiveTab 
 }) => {
-  // ... resto del componente igual
   if (!movie) return null;
 
   return (
@@ -36,10 +36,10 @@ const MovieCard = ({
       <div className="relative">
         {movie.poster_path ? (
           <img
-          src={movie.poster_path}
-          alt={movie.title}
-          className="w-full aspect-[2/3] object-cover"
-        />
+            src={movie.poster_path}
+            alt={movie.title}
+            className="w-full aspect-[2/3] object-cover"
+          />
         ) : (
           <div className="w-full aspect-[2/3] bg-gray-200 flex items-center justify-center">
             <Film className="w-12 h-12 text-gray-400" />
@@ -52,48 +52,45 @@ const MovieCard = ({
       <CardContent className="p-4">
         <CardTitle className="text-lg font-semibold mb-2 text-gray-800">{movie.title}</CardTitle>
         {movie.overview && (
-      <CardDescription
-      className="text-sm text-gray-600 line-clamp-10 group-hover:line-clamp-none transition-all duration-300 ease-in-out"
-    >
-      {movie.overview}
-    </CardDescription>
+          <CardDescription
+            className="text-sm text-gray-600 line-clamp-10 group-hover:line-clamp-none transition-all duration-300 ease-in-out"
+          >
+            {movie.overview}
+          </CardDescription>
         )}
-        
-        
-      <div className="mt-4 flex flex-wrap gap-2">
-        {movie.tags
-          ?.sort((a, b) => b.relevance - a.relevance)
-          .slice(0, 10)
-          .map((tag, index) => (
-            <button
-              key={`${tag.name}-${index}`}
-              onClick={() => {
-                setSearchQuery(tag.name || tag);
-                setSearchType('tag');
-                handleSearch();
-                setActiveTab('search');
-              }}
-              className="px-2 py-1 bg-blue-100 text-blue-600 rounded-full text-xs 
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {movie.tags
+            ?.sort((a, b) => b.relevance - a.relevance)
+            .slice(0, 10)
+            .map((tag, index) => (
+              <button
+                key={`${tag.name}-${index}`}
+                onClick={() => {
+                  setSearchQuery(tag.name || tag);
+                  setSearchType('tag');
+                  handleSearch();
+                  setActiveTab('search');
+                }}
+                className="px-2 py-1 bg-blue-100 text-blue-600 rounded-full text-xs 
                         hover:bg-blue-200 transition-colors cursor-pointer"
-            >
-              {tag.name || tag}
-            </button>
-          ))}
-      </div>
+              >
+                {tag.name || tag}
+              </button>
+            ))}
+        </div>
       </CardContent>
       <CardFooter className="p-4 flex justify-between items-center border-t">
         {onRate && (
-          <div className="flex gap-1">
-            {[1, 2, 3, 4, 5].map((rating) => (
-              <Button
-                key={rating}
-                variant={currentRating === rating ? "default" : "outline"}
-                onClick={() => onRate(movie.id, rating)}
-                className={`w-10 h-10 p-0 ${currentRating === rating ? 'bg-blue-500 text-white' : ''}`}
-              >
-                {rating}
-              </Button>
-            ))}
+          <div className="flex items-center gap-2">
+            <Rating
+              initialRating={currentRating || 0}
+              fractions={2} // Permite media estrella
+              emptySymbol={<Star className="text-gray-300 w-6 h-6" />}
+              fullSymbol={<Star className="text-yellow-500 w-6 h-6" />}
+              onChange={(value) => onRate(movie.id, value)}
+            />
+            <span className="text-sm text-gray-600">{currentRating || 'Sin calificar'}</span>
           </div>
         )}
         {showFeedback && (
