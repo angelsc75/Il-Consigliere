@@ -241,7 +241,7 @@ const OnboardingFlow = () => {
     }
     setLoading(false);
   };
-
+  
   const handleSubmitRatings = async () => {
     if (Object.keys(userRatings).length === 0) {
       setError('Por favor, califica al menos una película antes de continuar');
@@ -409,47 +409,53 @@ const OnboardingFlow = () => {
           </div>
 
           {activeTab === 'search' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Buscar Películas</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-4 mb-6">
-                  <Input
-                    placeholder="Buscar películas..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="flex-1"
-                  />
-                  <select
-                    value={searchType}
-                    onChange={(e) => setSearchType(e.target.value)}
-                    className="px-3 py-2 border rounded-md"
-                  >
-                    <option value="title">Título</option>
-                    <option value="tag">Tag</option>
-                    <option value="genre">Género</option>
-                  </select>
-                  <Button onClick={handleSearch}>Buscar</Button>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {searchResults.map(movie => (
-                    <MovieCard
-                    key={movie.id}
-                    movie={movie}
-                    onRate={handleRating}
-                    currentRating={userRatings[movie.id]}
-                    setSearchQuery={setSearchQuery}
-                    setSearchType={setSearchType}
-                    handleSearch={handleSearch}
-                    setActiveTab={setActiveTab}
-                  />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+  <Card>
+    <CardHeader>
+      <CardTitle>Buscar Películas</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="flex gap-4 mb-6">
+        <Input
+          placeholder="Buscar películas..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="flex-1"
+        />
+        <select
+          value={searchType}
+          onChange={(e) => setSearchType(e.target.value)}
+          className="px-3 py-2 border rounded-md"
+        >
+          <option value="title">Título</option>
+          <option value="tag">Tag</option>
+          <option value="genre">Género</option>
+        </select>
+        <Button onClick={handleSearch}>Buscar</Button>
+      </div>
+
+      <div className="flex gap-4 mb-6">
+        <Button onClick={handleSubmitRatings} disabled={Object.keys(userRatings).length === 0}>
+          Enviar puntuaciones
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {searchResults.map(movie => (
+          <MovieCard
+            key={movie.id}
+            movie={movie}
+            onRate={handleRating}
+            currentRating={userRatings[movie.id]}
+            setSearchQuery={setSearchQuery}
+            setSearchType={setSearchType}
+            handleSearch={handleSearch}
+            setActiveTab={setActiveTab}
+          />
+        ))}
+      </div>
+    </CardContent>
+  </Card>
+)}
           
           {activeTab === 'recommendations' && (
             <Card>
