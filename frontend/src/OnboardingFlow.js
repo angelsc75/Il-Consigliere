@@ -16,7 +16,7 @@ import Header from "./components/ui/header";
 
 const API_BASE_URL = 'http://localhost:8000';
 
-const REQUIRED_RATINGS = 10;
+
 
 const MovieCard = ({ 
   movie, 
@@ -230,20 +230,44 @@ const OnboardingFlow = () => {
     setLoading(false);
   };
 
-  const handleRating = async (movieId, rating) => {
-    const updatedRatings = {
-      ...userRatings,
-      [movieId]: rating
-    };
-    setUserRatings(updatedRatings);
-    
-    const totalRatings = Object.keys(updatedRatings).length;
-    setProgress((totalRatings / REQUIRED_RATINGS) * 100);
-    
-    if (totalRatings >= REQUIRED_RATINGS) {
-      await submitRatings(updatedRatings);
+  const loadMoreMovies = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/movies/popular`);
+      const data = await response.json();
+      setMoviesToRate(data);
+    } catch (error) {
+      setError('Error al cargar más películas');
+    }
+    setLoading(false);
+  };
+
+  const handleSubmitRatings = async () => {
+    if (Object.keys(userRatings).length === 0) {
+      setError('Por favor, califica al menos una película antes de continuar');
+      return;
+    }
+
+    try {
+      await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ratings: userRatings })
+      });
+      setHasEnoughRatings(true);
+      setStep('navigation');
+    } catch (error) {
+      setError('Error al enviar puntuaciones');
     }
   };
+
+  const handleRating = async (movieId, rating) => {
+    setUserRatings(prev => ({
+      ...prev,
+      [movieId]: rating
+    }));
+  };
+  
 
   const submitRatings = async (ratings) => {
     try {
@@ -321,33 +345,51 @@ const OnboardingFlow = () => {
         </div>
       )}
 
-      {step === 'rating' && (
-        <div className="max-w-4xl mx-auto p-6">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4">
-              Puntúa estas películas para obtener recomendaciones personalizadas
-            </h2>
-            <Progress value={progress} className="w-full" />
-            <p className="text-sm text-gray-500 mt-2">
-              {Object.keys(userRatings).length} de {REQUIRED_RATINGS} películas puntuadas
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {moviesToRate.slice(0, REQUIRED_RATINGS).map(movie => (
-              <MovieCard
-              key={movie.id}
-              movie={movie}
-              onRate={handleRating}
-              currentRating={userRatings[movie.id]}
-              setSearchQuery={setSearchQuery}
-              setSearchType={setSearchType}
-              handleSearch={handleSearch}
-              setActiveTab={setActiveTab}
-            />
-            ))}
-          </div>
+{step === 'rating' && (
+    <div className="max-w-4xl mx-auto p-6">
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold mb-4">
+          Puntúa las películas que hayas visto
+        </h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Has puntuado {Object.keys(userRatings).length} películas
+        </p>
+        <div className="flex gap-4 mb-6">
+          <Button 
+            onClick={loadMoreMovies}
+            variant="outline"
+          >
+            Cargar más películas
+          </Button>
+          <Button 
+            onClick={handleSubmitRatings}
+            disabled={Object.keys(userRatings).length === 0}
+          >
+            Enviar puntuaciones y continuar
+          </Button>
         </div>
-      )}
+        {error && (
+          <div className="text-red-500 mb-4">
+            {error}
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {moviesToRate.map(movie => (
+          <MovieCard
+            key={movie.id}
+            movie={movie}
+            onRate={handleRating}
+            currentRating={userRatings[movie.id]}
+            setSearchQuery={setSearchQuery}
+            setSearchType={setSearchType}
+            handleSearch={handleSearch}
+            setActiveTab={setActiveTab}
+          />
+        ))}
+      </div>
+    </div>
+  )}
 
       {step === 'navigation' && (
         <div className="max-w-4xl mx-auto p-6">
