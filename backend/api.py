@@ -236,30 +236,52 @@ def get_recommender():
 async def get_popular_movies(limit: int = 10, neo4j_session = Depends(get_neo4j)):
     print("Debug: Iniciando petición popular movies")
     try:
+        # Primero obtenemos un ID aleatorio
+        random_id_query = """
+        MATCH (m:Movie)
+        WITH min(m.movieId) as min_id, max(m.movieId) as max_id
+        RETURN min_id, max_id
+        """
+        
+        result = neo4j_session.run(random_id_query)
+        range_data = result.single()
+        min_id = range_data['min_id']
+        max_id = range_data['max_id']
+        
+        import random
+        random_start_id = random.randint(min_id, max_id - limit)
+        
+        # Ahora obtenemos las películas a partir de ese ID
         query = """
-        MATCH (m:Movie)<-[r:RATED]-()
-        WITH m, round(coalesce(AVG(r.rating), 0) * 100) / 100 as avg_rating, count(r) as num_ratings
+        MATCH (m:Movie)
+        WHERE m.movieId >= $start_id
+        WITH m
+        ORDER BY m.movieId
+        LIMIT $limit
+        OPTIONAL MATCH (m)<-[r:RATED]-()
         RETURN m.movieId as movieId, 
                m.title as title,
-               avg_rating,
-               num_ratings
-        LIMIT $limit
+               round(coalesce(AVG(r.rating), 0) * 100) / 100 as avg_rating
         """
         
         print("Debug: Ejecutando query")
-        result = neo4j_session.run(query, limit=limit)
+        result = neo4j_session.run(query, start_id=random_start_id, limit=limit)
         movies = list(result)
         recommender = MovieRecommender()
         movies_with_info = []
+        
         for movie in movies:
-            movie_data = {"id": movie["movieId"], "title": movie["title"], "rating": movie["avg_rating"],}
+            movie_data = {
+                "id": movie["movieId"],
+                "title": movie["title"],
+                "rating": movie["avg_rating"],
+            }
             tmdb_info = recommender.get_tmdb_info(movie["movieId"])
-            print(f"TMDB info for movie {movie['movieId']}: {tmdb_info}")  # Log debug
+            print(f"TMDB info for movie {movie['movieId']}: {tmdb_info}")
             movie_data.update(tmdb_info)
             movies_with_info.append(movie_data)
         
         return movies_with_info
-        
         
     except Exception as e:
         print(f"Error: {str(e)}")
