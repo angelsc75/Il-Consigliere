@@ -186,7 +186,7 @@ const OnboardingFlow = () => {
   };
 
   const fetchInitialMovies = async () => {
-    if (moviesToRate.length > 0) return;
+    
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/movies/popular`);
