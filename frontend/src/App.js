@@ -8,7 +8,7 @@ import './globals.css';
 function App() {
   return (
     <>
-      <Header /> {/* Cabecera global */}
+      
       <Routes>
         <Route path="/" element={<OnboardingFlow />} />
         <Route path="/recommender" element={<MovieRecommender />} />
