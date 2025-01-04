@@ -17,7 +17,39 @@
   
   .app-header h1 {
     font-size: 40px;
-    margin: 0;
+    margin: 0 auto; /* Centra horizontalmente */
+    text-align: center;
+    flex-grow: 1; /* Hace que el título tome el espacio sobrante */
+  }
+  .header-actions {
+    margin-left: auto; /* Empuja los elementos hacia la derecha */
+    display: flex;
+    align-items: center;
+    gap: 50px; /* Espacio entre el userId y el botón */
+  }
+  
+  .user-id {
+    font-size: 16px;
+    color: white;
+  }
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 15px; /* Espacio entre el texto del userId y el botón */
+  }
+  
+  .logout-button {
+    background-color: #ff4d4d; /* Rojo claro */
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 10px 15px;
+    cursor: pointer;
+    font-size: 16px;
+  }
+  
+  .logout-button:hover {
+    background-color: #e60000; /* Rojo más oscuro en hover */
   }
   
   
