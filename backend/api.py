@@ -124,9 +124,10 @@ class MovieRecommender:
             with open(os.path.join(models_dir, 'tag_scaler.pkl'), 'rb') as f:
                 self.tag_scaler = pickle.load(f)
             
-            # Obtener el rango de IDs de usuario del entrenamiento
-            self.min_user_id = min(self.user_encoder.classes_)
-            self.max_user_id = max(self.user_encoder.classes_)
+            # Store known label ranges
+            self.known_user_labels = set(self.user_encoder.classes_)
+            self.min_user_id = min(self.known_user_labels)
+            self.max_user_id = max(self.known_user_labels)
             
         except Exception as e:
             print(f"Error al cargar los encoders: {str(e)}")
@@ -140,38 +141,88 @@ class MovieRecommender:
             print(f"Error al cargar movie_links: {str(e)}")
             raise
 
-    def predict_rating(self, user_id: int, movie_id: int, neo4j_session):
-        # Manejar usuarios nuevos mapeándolos al rango conocido
-        if user_id > self.max_user_id:
-            mapped_user_id = self.min_user_id + (user_id % (self.max_user_id - self.min_user_id))
-        else:
-            mapped_user_id = user_id
-
-        # Obtener features de tags
-        tags = self.get_movie_tags(movie_id, neo4j_session)
-        tag_features_df = pd.DataFrame([tags], columns=self.tag_scaler.feature_names_in_)
-        tag_features = self.tag_scaler.transform(tag_features_df)
-
-        try:
-            # Codificar usuario y película
-            user_encoded = self.user_encoder.transform([mapped_user_id])
-            movie_encoded = self.movie_encoder.transform([movie_id])
-
-            # Predecir rating
-            prediction = self.model.predict(
-                [
-                    user_encoded,
-                    movie_encoded,
-                    tag_features
-                ],
-                verbose=0
-            )
+    def map_user_id(self, user_id):
+        """
+        Maps an unseen user ID to a known user ID range.
+        """
+        # Convert numpy int64 to regular int if necessary
+        user_id = int(user_id)
+        
+        # If user_id is already in known labels, return it
+        if user_id in self.known_user_labels:
+            return user_id
             
-            return float(prediction[0][0])
+        # Map to known range using modulo
+        mapped_id = self.min_user_id + (user_id - self.min_user_id) % (self.max_user_id - self.min_user_id + 1)
+        while mapped_id not in self.known_user_labels:
+            mapped_id = self.min_user_id + (mapped_id - self.min_user_id + 1) % (self.max_user_id - self.min_user_id + 1)
+            
+        return mapped_id
+
+    def predict_rating(self, user_id: int, movie_id: int, neo4j_session):
+        """
+        Predice el rating que un usuario daría a una película usando el modelo de red neuronal.
+        """
+        try:
+            # Map user_id to known range
+            mapped_user_id = self.map_user_id(user_id)
+            print(f"Mapped user_id {user_id} to {mapped_user_id}")
+
+            # Handle movie_id
+            if movie_id not in self.movie_encoder.classes_:
+                print(f"Warning: Movie ID {movie_id} not in training set")
+                return 3.5  # Return neutral rating for unknown movies
+            
+            # Get tag features
+            tags = self.get_movie_tags(movie_id, neo4j_session)
+            tag_features_df = pd.DataFrame([tags], columns=self.tag_scaler.feature_names_in_)
+            tag_features = self.tag_scaler.transform(tag_features_df)
+
+            # Transform IDs
+            try:
+                user_encoded = self.user_encoder.transform([mapped_user_id])
+                movie_encoded = self.movie_encoder.transform([movie_id])
+            except Exception as e:
+                print(f"Error encoding IDs: {str(e)}")
+                return 3.5
+
+            # Make prediction
+            try:
+                prediction = self.model.predict(
+                    [user_encoded, movie_encoded, tag_features],
+                    verbose=0
+                )
+                predicted_rating = float(np.clip(prediction[0][0], 0.5, 5.0))
+                print(f"Raw prediction for user {user_id} (mapped: {mapped_user_id}), movie {movie_id}: {predicted_rating}")
+            except Exception as e:
+                print(f"Error in model prediction: {str(e)}")
+                return 3.5
+
+            # Adjust based on user history
+            try:
+                user_ratings_query = """
+                MATCH (u:User {userId: $user_id})-[r:RATED]->()
+                RETURN avg(r.rating) as avg_rating, count(r) as rating_count
+                """
+                result = neo4j_session.run(user_ratings_query, user_id=user_id)
+                user_stats = result.single()
+                
+                if user_stats and user_stats["rating_count"] > 0:
+                    user_avg = user_stats["avg_rating"]
+                    global_avg = 3.5
+                    bias = user_avg - global_avg
+                    predicted_rating = np.clip(predicted_rating + (bias * 0.5), 0.5, 5.0)
+                    print(f"Adjusted prediction with user bias: {predicted_rating}")
+            except Exception as e:
+                print(f"Error adjusting prediction: {str(e)}")
+                # Continue with unadjusted prediction
+            
+            return predicted_rating
+            
         except Exception as e:
-            print(f"Error en predict_rating: {str(e)}")
-            # Devolver un rating por defecto en caso de error
-            return 3.0  # Rating neutral
+            print(f"Error in predict_rating: {str(e)}")
+            return 3.5  # Return neutral rating on error
+    
 
 
     def get_movie_tags(self, movie_id: int, neo4j_session):
@@ -336,49 +387,127 @@ async def get_recommendations(
     recommender: MovieRecommender = Depends(get_recommender)
 ):
     try:
+        # Verify user exists
         user_query = "MATCH (u:User {userId: $user_id}) RETURN u"
         user_result = neo4j_session.run(user_query, user_id=user_id)
-        if not user_result.single():
+        user = user_result.single()
+        if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
+        # Get user's genre preferences with null check
+        genre_query = """
+        MATCH (u:User {userId: $user_id})-[r:RATED]->(m:Movie)
+        WHERE m.genres IS NOT NULL
+        UNWIND m.genres as genre
+        WITH genre, avg(r.rating) as genre_rating
+        WHERE genre IS NOT NULL AND genre <> '(no genres listed)'
+        WITH genre, genre_rating
+        ORDER BY genre_rating DESC
+        LIMIT 3
+        RETURN collect(genre) as preferred_genres
+        """
+        genre_result = neo4j_session.run(genre_query, user_id=user_id)
+        genre_record = genre_result.single()
+        
+        # Provide default empty list if no genres found
+        preferred_genres = genre_record["preferred_genres"] if genre_record and genre_record["preferred_genres"] else []
+
+        # Modified query to handle null genres
         query = """
-        MATCH (u:User {userId: $user_id})
         MATCH (m:Movie)
-        WHERE NOT EXISTS((u)-[:RATED]->(m))
-        RETURN m.movieId as movieId, m.title as title
-        LIMIT 3  
+        WHERE NOT EXISTS {
+            MATCH (u:User {userId: $user_id})-[:RATED]->(m)
+        }
+        WITH m, 
+             CASE 
+                WHEN m.genres IS NOT NULL AND
+                     any(genre IN m.genres WHERE genre IN $preferred_genres)
+                THEN 2
+                ELSE 1
+             END as relevance_score,
+             rand() as random_score
+        ORDER BY relevance_score DESC, random_score
+        SKIP $offset
+        LIMIT $limit
+        RETURN m.movieId as movieId, 
+               m.title as title,
+               CASE 
+                   WHEN m.genres IS NULL THEN []
+                   ELSE m.genres
+               END as genres
         """
         
-        result = neo4j_session.run(query, user_id=user_id)
-        movies = []
+        import random
+        offset = random.randint(0, 200)
+        result = neo4j_session.run(
+            query, 
+            user_id=user_id,
+            preferred_genres=preferred_genres,
+            offset=offset,
+            limit=50
+        )
         
+        candidates = []
+        
+        # Process results with null checks
         for row in result:
+            if row is None:
+                continue
+                
             movie = {
                 "id": row["movieId"],
-                "title": row["title"]
+                "title": row["title"],
+                "tags": row["genres"] if row["genres"] else []
             }
             
-            # Obtener la predicción de rating
-            predicted_rating = recommender.predict_rating(user_id, movie["id"], neo4j_session)
-            movie["predicted_rating"] = predicted_rating
+            try:
+                predicted_rating = recommender.predict_rating(user_id, movie["id"], neo4j_session)
+                movie["predicted_rating"] = predicted_rating
 
-            # Obtener tags
-            tags_query = "MATCH (m:Movie {movieId: $movie_id})-[:HAS_TAG]->(t:Tag) RETURN t.name as tag"
-            tags_result = neo4j_session.run(tags_query, movie_id=movie["id"])
-            movie["tags"] = [row["tag"] for row in tags_result]
+                tmdb_info = recommender.get_tmdb_info(movie["id"])
+                if tmdb_info:
+                    movie.update(tmdb_info)
+            except Exception as e:
+                print(f"Error processing movie {movie['id']}: {str(e)}")
+                continue
 
-            # Obtener info de TMDB
-            tmdb_info = recommender.get_tmdb_info(movie["id"])
-            movie.update(tmdb_info)
-
-            movies.append(movie)
+            candidates.append(movie)
         
-        # Ordena y devuelve solo 3 recomendaciones
-        movies.sort(key=lambda x: x.get("predicted_rating", 0), reverse=True)
-        return movies
+        # Handle case when no candidates are found
+        if not candidates:
+            # Fallback to popular movies
+            popular_query = """
+            MATCH (m:Movie)<-[r:RATED]-()
+            WITH m, COUNT(r) as rating_count, AVG(r.rating) as avg_rating
+            WHERE rating_count > 10
+            RETURN m.movieId as movieId, 
+                   m.title as title,
+                   m.genres as genres
+            ORDER BY avg_rating DESC, rating_count DESC
+            LIMIT 3
+            """
+            popular_result = neo4j_session.run(popular_query)
+            for row in popular_result:
+                movie = {
+                    "id": row["movieId"],
+                    "title": row["title"],
+                    "tags": row["genres"] if row["genres"] else [],
+                    "predicted_rating": 3.5  # Default neutral rating
+                }
+                tmdb_info = recommender.get_tmdb_info(movie["id"])
+                if tmdb_info:
+                    movie.update(tmdb_info)
+                candidates.append(movie)
+        
+        # Sort and return recommendations with randomization
+        if candidates:
+            candidates.sort(key=lambda x: (x.get("predicted_rating", 0) * random.uniform(0.95, 1.05)), reverse=True)
+            return candidates[:3]
+        else:
+            return []
 
     except Exception as e:
-        print(f"Error en get_recommendations: {str(e)}")
+        print(f"Error in get_recommendations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/movies/recommendations/{user_id}")
