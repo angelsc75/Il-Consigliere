@@ -332,63 +332,51 @@ async def search_movies(
 @app.get("/api/movies/recommendations/{user_id}", response_model=List[Movie])
 async def get_recommendations(
     user_id: int,
-    limit: int = 10,
     neo4j_session = Depends(get_neo4j),
     recommender: MovieRecommender = Depends(get_recommender)
 ):
     try:
-        # Verificar usuario
         user_query = "MATCH (u:User {userId: $user_id}) RETURN u"
         user_result = neo4j_session.run(user_query, user_id=user_id)
         if not user_result.single():
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-        
-        # Obtener películas no calificadas
+
         query = """
         MATCH (u:User {userId: $user_id})
         MATCH (m:Movie)
         WHERE NOT EXISTS((u)-[:RATED]->(m))
         RETURN m.movieId as movieId, m.title as title
-        LIMIT 100
+        LIMIT 3  
         """
         
         result = neo4j_session.run(query, user_id=user_id)
         movies = []
         
         for row in result:
-            try:
-                movie = {
-                    "id": row["movieId"],
-                    "title": row["title"]
-                }
-                
-                # Predecir rating
-                predicted_rating = recommender.predict_rating(
-                    user_id, movie["id"], neo4j_session
-                )
-                movie["predicted_rating"] = predicted_rating
-                
-                # Obtener tags
-                tags_query = """
-                MATCH (m:Movie {movieId: $movie_id})-[:HAS_TAG]->(t:Tag)
-                RETURN t.name as tag
-                """
-                tags_result = neo4j_session.run(tags_query, movie_id=movie["id"])
-                movie["tags"] = [row["tag"] for row in tags_result]
-                
-                # Obtener info de TMDB
-                tmdb_info = recommender.get_tmdb_info(movie["id"])
-                movie.update(tmdb_info)
-                
-                movies.append(movie)
-            except Exception as e:
-                print(f"Error procesando película {row['movieId']}: {str(e)}")
-                continue
+            movie = {
+                "id": row["movieId"],
+                "title": row["title"]
+            }
+            
+            # Obtener la predicción de rating
+            predicted_rating = recommender.predict_rating(user_id, movie["id"], neo4j_session)
+            movie["predicted_rating"] = predicted_rating
+
+            # Obtener tags
+            tags_query = "MATCH (m:Movie {movieId: $movie_id})-[:HAS_TAG]->(t:Tag) RETURN t.name as tag"
+            tags_result = neo4j_session.run(tags_query, movie_id=movie["id"])
+            movie["tags"] = [row["tag"] for row in tags_result]
+
+            # Obtener info de TMDB
+            tmdb_info = recommender.get_tmdb_info(movie["id"])
+            movie.update(tmdb_info)
+
+            movies.append(movie)
         
-        # Ordenar por predicción y limitar resultados
+        # Ordena y devuelve solo 3 recomendaciones
         movies.sort(key=lambda x: x.get("predicted_rating", 0), reverse=True)
-        return movies[:limit]
-        
+        return movies
+
     except Exception as e:
         print(f"Error en get_recommendations: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -396,12 +384,11 @@ async def get_recommendations(
 @app.post("/api/movies/recommendations/{user_id}")
 async def get_personalized_recommendations(
     user_id: int,
-    body: dict,  # Cambiamos esto temporalmente para ver qué recibimos
+    body: dict,  
     neo4j_session = Depends(get_neo4j),
     recommender: MovieRecommender = Depends(get_recommender)
 ):
     print("Received body:", body)  # Debug print
-    
     try:
         ratings = body.get('ratings', {})
         # Convertir las claves del diccionario a enteros
@@ -413,7 +400,7 @@ async def get_personalized_recommendations(
             MATCH (u:User {userId: $user_id})
             MATCH (m:Movie {movieId: $movie_id})
             MERGE (u)-[r:RATED]->(m)
-            SET r.rating = $rating
+            SET r.rating = $rating, r.timestamp = datetime()
             """
             neo4j_session.run(
                 query,
@@ -422,44 +409,11 @@ async def get_personalized_recommendations(
                 rating=rating
             )
         
-        return await get_recommendations(user_id, 10, neo4j_session, recommender)
+        return await get_recommendations(user_id, neo4j_session, recommender)
     except Exception as e:
         print("Error processing request:", str(e))  # Debug print
         raise HTTPException(status_code=400, detail=str(e))
 
-# 3. Finalmente las rutas con parámetros genéricos
-@app.get("/api/movies/{movie_id}", response_model=Movie)
-async def get_movie(
-    movie_id: int,
-    neo4j_session = Depends(get_neo4j),
-    recommender: MovieRecommender = Depends(get_recommender)
-):
-    query = """
-    MATCH (m:Movie {movieId: $movie_id})
-    RETURN m.movieId as movieId, m.title as title
-    """
-    result = neo4j_session.run(query, movie_id=movie_id)
-    movie_data = result.single()
-    
-    if not movie_data:
-        raise HTTPException(status_code=404, detail="Película no encontrada")
-    
-    tags_query = """
-    MATCH (m:Movie {movieId: $movie_id})-[:HAS_TAG]->(t:Tag)
-    RETURN t.name as tag
-    """
-    tags_result = neo4j_session.run(tags_query, movie_id=movie_id)
-    
-    movie = {
-        "id": movie_data["movieId"],
-        "title": movie_data["title"],
-        "tags": [row["tag"] for row in tags_result]
-    }
-    
-    tmdb_info = recommender.get_tmdb_info(movie_id)
-    movie.update(tmdb_info)
-    
-    return movie
 
 @app.get("/api/movies/{movie_id}/feedback-stats")
 async def get_movie_feedback_stats(
@@ -628,31 +582,41 @@ async def create_user(neo4j_session=Depends(get_neo4j)):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-@app.post("/api/feedback")
-async def create_feedback(
-    feedback: Feedback,
+@app.post("/api/feedback/recommendation")
+async def create_recommendation_feedback(
+    user_id: int,
+    movie_id: int,
+    quality: int,
     neo4j_session = Depends(get_neo4j)
 ):
+    """
+    Almacena el feedback sobre la calidad de una recomendación.
+    quality: escala del 1 al 5 donde:
+    1 = Muy mala
+    2 = Mala
+    3 = Regular
+    4 = Buena
+    5 = Excelente
+    """
     query = """
     MATCH (u:User {userId: $user_id})
     MATCH (m:Movie {movieId: $movie_id})
-    MERGE (u)-[f:GAVE_FEEDBACK]->(m)
-    SET f.type = $feedback_type,
-        f.timestamp = $timestamp
+    MERGE (u)-[f:RECOMMENDATION_FEEDBACK]->(m)
+    SET f.quality = $quality,
+        f.timestamp = datetime()
     RETURN f
     """
-    
     try:
         neo4j_session.run(
             query,
-            user_id=feedback.user_id,
-            movie_id=feedback.movie_id,
-            feedback_type=feedback.feedback_type,
-            timestamp=feedback.timestamp
+            user_id=user_id,
+            movie_id=movie_id,
+            quality=quality
         )
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/users/{user_id}/interactions")
 async def get_user_interactions(

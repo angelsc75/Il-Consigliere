@@ -13,6 +13,7 @@ import { Input } from "./components/ui/input";
 import { Button } from "./components/ui/button";
 import { Progress } from "./components/ui/progress";
 import Header from "./components/ui/header";
+import RecommendationRatingScreen from './RecommendationRatingScreen';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -131,7 +132,11 @@ const OnboardingFlow = () => {
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState(0);
   const [activeTab, setActiveTab] = useState('search');
-
+  const [selectedMovie, setSelectedMovie] = useState(null);
+  const [currentMovieRating, setCurrentMovieRating] = useState(null);
+  const [recommendationQuality, setRecommendationQuality] = useState(null);
+  const [isModelTrained, setIsModelTrained] = useState(false);
+  const [minRequiredRatings] = useState(5);
   useEffect(() => {
     const storedUserId = localStorage.getItem('userId');
     if (storedUserId) {
@@ -158,14 +163,21 @@ const OnboardingFlow = () => {
       setError('Error al crear usuario');
     }
   };
+  const checkModelStatus = async (userId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/users/${userId}/status`);
+      const data = await response.json();
+      setIsModelTrained(data.ratingCount >= minRequiredRatings);
+    } catch (error) {
+      console.error('Error checking model status:', error);
+    }
+  };
 
   const checkUserStatus = async (id) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/users/${id}/status`);
-      
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
@@ -173,6 +185,8 @@ const OnboardingFlow = () => {
       localStorage.setItem('userId', id);
       setHasEnoughRatings(data.hasEnoughRatings);
       setStep(data.hasEnoughRatings ? 'navigation' : 'rating');
+      
+      await checkModelStatus(id); // Verificar estado del modelo
       
       if (!data.hasEnoughRatings) {
         await fetchInitialMovies();
@@ -221,13 +235,38 @@ const OnboardingFlow = () => {
   const fetchRecommendations = async () => {
     setLoading(true);
     try {
+      // Primero enviamos las puntuaciones actuales si hay alguna
+      if (Object.keys(userRatings).length > 0) {
+        await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ratings: userRatings })
+        });
+      }
+  
+      // Luego obtenemos las nuevas recomendaciones
       const response = await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
-      setRecommendations(data);
+      
+      if (Array.isArray(data) && data.length > 0) {
+        setRecommendations(data);
+      } else {
+        console.warn('No se recibieron recomendaciones del servidor');
+        // Si no hay recomendaciones personalizadas, obtenemos películas populares como fallback
+        const popularResponse = await fetch(`${API_BASE_URL}/api/movies/popular?limit=3`);
+        const popularData = await popularResponse.json();
+        setRecommendations(popularData);
+      }
     } catch (error) {
+      console.error('Error al obtener recomendaciones:', error);
       setError('Error al obtener recomendaciones');
+      // También podríamos cargar películas populares como fallback aquí
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const loadMoreMovies = async () => {
@@ -247,17 +286,31 @@ const OnboardingFlow = () => {
       setError('Por favor, califica al menos una película antes de continuar');
       return;
     }
-
+  
+    setLoading(true);
     try {
+      // Primero enviamos las puntuaciones
       await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ratings: userRatings })
       });
+  
+      // Luego obtenemos las recomendaciones
+      const recommendationsResponse = await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`);
+      const recommendationsData = await recommendationsResponse.json();
+      
+      // Actualizamos el estado
+      setRecommendations(recommendationsData);
       setHasEnoughRatings(true);
       setStep('navigation');
+      setActiveTab('recommendations'); // Cambiamos a la pestaña de recomendaciones
+      
     } catch (error) {
-      setError('Error al enviar puntuaciones');
+      console.error('Error:', error);
+      setError('Error al procesar las puntuaciones y obtener recomendaciones');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -268,20 +321,58 @@ const OnboardingFlow = () => {
     }));
   };
   
+  const [selectedMovieId, setSelectedMovieId] = useState(null);
 
-  const submitRatings = async (ratings) => {
-    try {
-      await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ratings })
-      });
-      setHasEnoughRatings(true);
-      setStep('navigation');
-    } catch (error) {
-      setError('Error al enviar puntuaciones');
+  const goToRatingScreen = () => {
+    if (selectedMovieId) {
+      setStep('rate-recommendation');
     }
   };
+
+  
+
+const handleRecommendationQuality = (value) => {
+  setRecommendationQuality(value);
+};
+
+const submitRecommendationFeedback = async () => {
+  if (!selectedMovieId || !recommendationQuality) return;
+
+  try {
+    await fetch(`${API_BASE_URL}/api/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        movie_id: selectedMovieId,
+        feedback_type: 'recommendation',
+        user_id: userId,
+        quality: recommendationQuality
+      })
+    });
+    setStep('navigation');
+    setSelectedMovieId(null);
+    setRecommendationQuality(null);
+  } catch (error) {
+    setError('Error al enviar el feedback de recomendación');
+  }
+};
+
+const submitRatings = async (ratings) => {
+  console.log("Enviando puntuaciones:", ratings);
+  try {
+    await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ratings }),
+    });
+    setHasEnoughRatings(true);
+    setStep('navigation');
+  } catch (error) {
+    console.error("Error enviando puntuaciones:", error);
+  }
+};
+
+  
 
   const handleLogout = () => {
     setUserId(null);
@@ -434,7 +525,40 @@ const OnboardingFlow = () => {
       </div>
 
       <div className="flex gap-4 mb-6">
-        <Button onClick={handleSubmitRatings} disabled={Object.keys(userRatings).length === 0}>
+        <Button 
+          onClick={async () => {
+            if (Object.keys(userRatings).length === 0) {
+              setError('Por favor, califica al menos una película antes de continuar');
+              return;
+            }
+
+            setLoading(true);
+            try {
+              // Enviamos las puntuaciones
+              await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ratings: userRatings })
+              });
+
+              // Obtenemos las recomendaciones
+              const recommendationsResponse = await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`);
+              const recommendationsData = await recommendationsResponse.json();
+              
+              // Actualizamos el estado
+              setRecommendations(recommendationsData);
+              setUserRatings({}); // Limpiamos los ratings temporales
+              setActiveTab('recommendations'); // Cambiamos a la pestaña de recomendaciones
+              
+            } catch (error) {
+              console.error('Error:', error);
+              setError('Error al procesar las puntuaciones y obtener recomendaciones');
+            } finally {
+              setLoading(false);
+            }
+          }} 
+          disabled={Object.keys(userRatings).length === 0}
+        >
           Enviar puntuaciones
         </Button>
       </div>
@@ -458,42 +582,132 @@ const OnboardingFlow = () => {
 )}
           
           {activeTab === 'recommendations' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Recomendaciones Personalizadas</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {recommendations.length === 0 ? (
-                  <div className="text-center py-8">
+      <Card>
+        <CardHeader>
+          <CardTitle>Recomendaciones Personalizadas</CardTitle>
+          <CardDescription>
+            {isModelTrained 
+              ? "Haz clic para obtener tus recomendaciones personalizadas"
+              : `Necesitas puntuar al menos ${minRequiredRatings} películas para obtener recomendaciones personalizadas. 
+                 Actualmente tienes ${userRatings ? Object.keys(userRatings).length : 0} puntuaciones.`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {recommendations.length > 0 ? (
+              recommendations.map(movie => (
+                <div
+                  key={movie.id}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer transition-transform hover:scale-105"
+                  onClick={() => {
+                    setSelectedMovie(movie);
+                    setStep('rate-recommendation');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      setSelectedMovie(movie);
+                      setStep('rate-recommendation');
+                    }
+                  }}
+                >
+                  <MovieCard movie={movie} showFeedback={false} />
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 col-span-3">
+                {isModelTrained ? (
+                  <Button onClick={fetchRecommendations}>
+                    Obtener Recomendaciones
+                  </Button>
+                ) : (
+                  <div className="space-y-4">
+                    <Button 
+                      variant="outline"
+                      onClick={() => setActiveTab('search')}
+                    >
+                      Ir a buscar películas para puntuar
+                    </Button>
+                    <p className="text-sm text-gray-500">
+                      Puedes obtener recomendaciones rápidas basadas en géneros similares mientras tanto
+                    </p>
                     <Button onClick={fetchRecommendations}>
-                      Obtener Recomendaciones
+                      Obtener recomendaciones rápidas
                     </Button>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {recommendations.map(movie => (
-                      <MovieCard
-                      key={movie.id}
-                      movie={movie}
-                      onRate={handleRating}
-                      currentRating={userRatings[movie.id]}
-                      showFeedback={true}
-                      setSearchQuery={setSearchQuery}
-                      setSearchType={setSearchType}
-                      handleSearch={handleSearch}
-                      setActiveTab={setActiveTab}
-                    />
-                    ))}
-                  </div>
                 )}
-              </CardContent>
-            </Card>
-          )}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    )}
+  </div>
+)}
+
+{step === 'rate-recommendation' && selectedMovie && (
+  <RecommendationRatingScreen
+    movie={selectedMovie}
+    currentRating={currentMovieRating}
+    currentQuality={recommendationQuality}
+    onRating={(value) => {
+      setCurrentMovieRating(value);
+      console.log(`Rated movie: ${selectedMovie.id} with ${value} stars`);
+    }}
+    onQualityRating={(value) => {
+      setRecommendationQuality(value);
+      console.log(`Rated recommendation quality: ${value}`);
+    }}
+    onBack={() => {
+      setStep('navigation');
+      setSelectedMovie(null);
+      setCurrentMovieRating(null);
+      setRecommendationQuality(null);
+    }}
+    onSubmit={async () => {
+      try {
+        console.log(`Submitting ratings for movie ${selectedMovie.id}`);
+        await fetch(`${API_BASE_URL}/api/movies/recommendations/${userId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ratings: {
+              [selectedMovie.id]: currentMovieRating
+            }
+          })
+        });
+
+        await fetch(`${API_BASE_URL}/api/feedback/recommendation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            movie_id: selectedMovie.id,
+            quality: recommendationQuality
+          })
+        });
+
+        setStep('navigation');
+        setSelectedMovie(null);
+        setCurrentMovieRating(null);
+        setRecommendationQuality(null);
+        await fetchRecommendations(); // Obtener nuevas recomendaciones después de enviar el feedback
+      } catch (error) {
+        console.error('Error submitting rating:', error);
+        setError('Error al enviar la evaluación. Por favor, inténtalo de nuevo.');
+      }
+    }}
+  />
+)}
+
+
+
         </div>
       )}
-    </div>
-  );
-};
+    
+  
+
 
 export default OnboardingFlow;
 
