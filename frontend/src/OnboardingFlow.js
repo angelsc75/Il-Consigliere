@@ -372,12 +372,19 @@ const submitRatings = async (ratings) => {
   }
 };
 
-  
 
-  const handleLogout = () => {
-    setUserId(null);
-    localStorage.removeItem('userId');
-    setStep('user-selection');
+
+const handleLogout = () => {
+  // Limpiar localStorage
+  localStorage.removeItem('userId');
+  
+  // Resetear todo el estado relacionado con el usuario
+  setUserId(null);
+  setStep('user-selection');
+  
+  setUserRatings({});
+  setRecommendations([]);
+  
   };
 
   if (loading) {
