@@ -60,9 +60,9 @@ def prepare_tag_features(tags_df, movie_ids):
     tag_features = scaler.fit_transform(tag_matrix)
     
     # Guardar scaler y nombres de tags para uso futuro
-    with open('src/models/model_ok/tag_scaler.pkl', 'wb') as f:
+    with open('ml/models/model_ok/tag_scaler.pkl', 'wb') as f:
         pickle.dump(scaler, f)
-    with open('src/models/model_ok/tag_columns.pkl', 'wb') as f:
+    with open('ml/models/model_ok/tag_columns.pkl', 'wb') as f:
         pickle.dump(list(tag_matrix.columns), f)
     
     return tag_features, tag_matrix.columns
@@ -81,7 +81,7 @@ def prepare_data(ratings_df, tags_df):
     ratings_df['rating'] = (ratings_df['rating'] - ratings_mean) / ratings_std
     
     # Guardar estadísticas de normalización
-    with open('src/models/model_ok/ratings_stats.pkl', 'wb') as f:
+    with open('ml/models/model_ok/ratings_stats.pkl', 'wb') as f:
         pickle.dump({'mean': ratings_mean, 'std': ratings_std}, f)
     
     # Preparar features de tags
@@ -91,13 +91,13 @@ def prepare_data(ratings_df, tags_df):
     )
     
     # Guardar tag_features para uso en predicciones - AÑADIR AQUÍ
-    with open('src/models/model_ok/tag_features.pkl', 'wb') as f:
+    with open('ml/models/model_ok/tag_features.pkl', 'wb') as f:
         pickle.dump(tag_features, f)
     
     # Guardar encoders
-    with open('src/models/model_ok/user_encoder.pkl', 'wb') as f:
+    with open('ml/models/model_ok/user_encoder.pkl', 'wb') as f:
         pickle.dump(user_encoder, f)
-    with open('src/models/model_ok/movie_encoder.pkl', 'wb') as f:
+    with open('ml/models/model_ok/movie_encoder.pkl', 'wb') as f:
         pickle.dump(movie_encoder, f)
     
     return ratings_df, tag_features, user_encoder, movie_encoder, len(tag_columns)
@@ -235,14 +235,14 @@ def main():
     plot_training_history(history)
     
     # Guardar modelo
-    model.save('src/models/model_ok/movie_recommender_model.keras')
+    model.save('ml/models/model_ok/movie_recommender_model.keras')
     
     # Cerrar conexión
     conn.close()
 
 def predict_rating(model, user_id, movie_id, user_encoder, movie_encoder, tag_features):
     # Cargar estadísticas de normalización
-    with open('src/models/model_ok/ratings_stats.pkl', 'rb') as f:
+    with open('ml/models/model_ok/ratings_stats.pkl', 'rb') as f:
         ratings_stats = pickle.load(f)
     
     # Codificar inputs
