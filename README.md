@@ -78,6 +78,8 @@ El dataset es MovieLens 20M
    TMDB_API_KEY=tu_api_key
    ```
 5. Ejecuta el backend:
+Antes de ejecutar el backend hay que ejecutar el archivo neural_recommender_ok.py, que creará a su vez otros archivos que necesitará api.py para funcionar correctamente. Los archivos generados por el modelo es posible que no estén actualizados porque uno de los actualizados pesaba demasiado como para poder subirlo al repositorio de GitHub. Una vez ejecutado este archivo. Ya puedes arrancar el backend.
+
    ```bash
    uvicorn api:app --reload
    ```
