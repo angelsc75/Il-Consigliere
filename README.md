@@ -1,4 +1,4 @@
-# ![Il Consigliere Logo](images/logo.png) Il consigliere (Un Recomendador de Películas)
+# ![Il Consigliere Logo](images/logo2.png) Il consigliere (Un Recomendador de Películas)
 
 ## Descripción
 Nota: este proyecto forma parte de los realizados en el bootcamp de IA de Factoría F5 realizado de
