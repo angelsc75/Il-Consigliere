@@ -1,4 +1,4 @@
-# ![Il Consigliere Logo](images/logo.png | width=100) Il consigliere (Un Recomendador de Películas)
+# <img src="images/logo.png" width="100" height="100" alt="Il Consigliere Logo"> Il consigliere (Un Recomendador de Películas)
 
 ## Descripción
 Nota: este proyecto forma parte de los realizados en el bootcamp de IA de Factoría F5 realizado de
