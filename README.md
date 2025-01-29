@@ -1,6 +1,8 @@
-# Proyecto: Il consigliere (Un Recomendador de Películas)
+# ![Il Consigliere Logo](images/logo.png) Il consigliere (Un Recomendador de Películas)
 
 ## Descripción
+Nota: este proyecto forma parte de los realizados en el bootcamp de IA de Factoría F5 realizado de
+mayo de 2024 a marzo de 2025. Es un proyecto personal, en el que yo elegí el tema ya que quería investigar cómo hacer un modelo recomendador y usar una base de datos de grafos.
 
 Este proyecto es una aplicación completa que permite a los usuarios obtener recomendaciones personalizadas de películas basadas en sus puntuaciones previas. Utiliza **FastAPI** para el backend, **React** para el frontend y una base de datos **Neo4j** para almacenar y gestionar los datos. Un modelo de red neuronal se entrena para predecir las calificaciones de los usuarios y generar recomendaciones personalizadas.
 
